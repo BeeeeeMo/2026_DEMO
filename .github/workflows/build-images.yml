@@ -1,0 +1,55 @@
+name: Build demo images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Demo_1/Cargo.toml"
+      - "Demo_1/Cargo.lock"
+      - "Demo_1/src/**"
+      - "Demo_1/Dockerfile*"
+      - "Demo_1/.dockerignore"
+      - ".github/workflows/build-images.yml"
+  pull_request:
+    paths:
+      - "Demo_1/Cargo.toml"
+      - "Demo_1/Cargo.lock"
+      - "Demo_1/src/**"
+      - "Demo_1/Dockerfile*"
+      - "Demo_1/.dockerignore"
+      - ".github/workflows/build-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: plain
+            dockerfile: Dockerfile
+          - variant: tini
+            dockerfile: Dockerfile.tini
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image (publish on push or manual run)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./Demo_1
+          file: ./Demo_1/${{ matrix.dockerfile }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ghcr.io/beeeeeemo/zombie-demo:${{ matrix.variant }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
