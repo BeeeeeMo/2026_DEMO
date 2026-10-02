@@ -54,10 +54,20 @@ kubectl -n demo2 logs -f job/threadpool-load
 POD=$(kubectl -n demo2 get pod -l app=threadpool-demo -o jsonpath='{.items[0].metadata.name}')
 kubectl -n demo2 debug -it "pod/$POD" \
   --target=app --container="debug-$(date +%s)" --profile=general \
-  --image=ghcr.io/beeeeemo/threadpool-demo-debug:latest -- bash
+  --image=mcr.microsoft.com/dotnet/sdk:8 -- bash
 ```
 
-**以下命令在 debug container 的 shell 裡執行。** 先從 app 啟動 log 確認 PID；本例沒有共享 process namespace，通常為 1，但不要盲目假設。驗證看到的是目標程序：
+**以下命令在 debug container 的 shell 裡執行。** SDK image 沒有預裝這兩個工具，先安裝可在 .NET 8 執行的版本（需要連線至 NuGet）：
+
+```bash
+dotnet tool install --tool-path /tools dotnet-counters --version 8.0.547301
+dotnet tool install --tool-path /tools dotnet-stack --version 8.0.547301
+export PATH="/tools:$PATH"
+```
+
+診斷容器使用 .NET 8，目標服務仍是 .NET 6，不需要相同版本。
+
+先從 app 啟動 log 確認 PID；本例沒有共享 process namespace，通常為 1，但不要盲目假設。驗證看到的是目標程序：
 
 ```bash
 PID=1  # 替換成 app 啟動 log 顯示的 PID

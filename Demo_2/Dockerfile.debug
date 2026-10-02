@@ -1,7 +1,0 @@
-FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy
-# These legacy tools target netcoreapp3.1; allow them to run on the .NET 6 runtime.
-ENV DOTNET_ROLL_FORWARD=Major
-RUN dotnet tool install --tool-path /tools dotnet-counters --version 6.0.351802 \
-    && dotnet tool install --tool-path /tools dotnet-stack --version 6.0.351802
-ENV PATH="/tools:${PATH}"
-CMD ["sleep", "infinity"]
