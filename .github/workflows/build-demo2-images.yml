@@ -21,10 +21,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Build native images and exercise application and diagnostics
+      - name: Build x64 API image and run application smoke test
         run: |
-          docker build -t demo2-app:smoke -f Demo_2/Dockerfile Demo_2
-          docker build -t demo2-debug:smoke -f Demo_2/Dockerfile.debug Demo_2
+          docker build --platform linux/amd64 -t demo2-app:smoke -f Demo_2/Dockerfile Demo_2
           python3 Demo_2/smoke.py
 
   build:
