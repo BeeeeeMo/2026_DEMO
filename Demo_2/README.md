@@ -11,7 +11,8 @@
 - `/good`：相同延遲，使用可取消的 `Task.Delay`，不佔住 worker 等待。
 - `BLOCK_MS`：1–300000 毫秒，預設 60000；無效值使程式啟動失敗。
 - ThreadPool 使用 Runtime 預設行為，**不設定最大／最小 worker threads**。
-- 獨立 k6 Job：256 VUs、3 分鐘，210 秒硬期限，不自動重跑。
+- 快速壓測 `load.yaml`：直接 256 VUs、3 分鐘。
+- 漸增壓測 `load-slow.yaml`：從 1 VU 漸增到 256，總共 4 分 15 秒。
 - startup probe 保護啟動；liveness 每 5 秒檢查、1 秒 timeout、連續失敗 3 次觸發重啟。
 - 刻意不設 readiness probe，避免 Service 摘除 endpoint 中斷負載；不是 production probe 建議。
 
@@ -47,6 +48,25 @@ Observer 的 2 秒 timeout 與 liveness 的 1 秒 timeout 不同；真正的 pro
 kubectl apply -f Demo_2/load.yaml
 kubectl -n demo2 logs -f job/threadpool-load
 ```
+
+### 慢慢加壓，觀察 health 延遲
+
+不要與快速壓測同時跑。先停止兩種負載；可選擇將 liveness 連續失敗門檻從 3 提高到 12，讓逾時後有約一分鐘的取證窗口，而不是很快重啟：
+
+```bash
+kubectl -n demo2 delete job threadpool-load threadpool-load-slow --ignore-not-found
+kubectl -n demo2 patch deployment threadpool-demo --type=strategic \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"app","livenessProbe":{"failureThreshold":12}}]}}}}'
+kubectl -n demo2 rollout status deployment/threadpool-demo --timeout=120s
+kubectl apply -f Demo_2/load-slow.yaml
+kubectl -n demo2 logs -f job/threadpool-load-slow
+```
+
+VUs 漸增目標：`1 → 2 → 8 → 32 → 64 → 128 → 256`。先開 health observer，看 `total` 耗時是否增加，再看 counters／stack。開始惡化的負載量會因環境不同，不保證每階段都會變慢。這是併發漸增，不是固定每秒請求數。
+
+Patch 會建立新 Pod，請在 rollout 完成後才加入 debug container。若想先備好工具，可以先暫緩上述 `apply load-slow.yaml`，完成下方診斷設定後再啟動壓測。
+
+### 加入診斷容器
 
 排查 terminal 重新設定 `$POD`，加入臨時診斷容器：
 
@@ -121,7 +141,7 @@ kubectl -n demo2 get pod "$POD" -o jsonpath='{range .status.containerStatuses[*]
 ## 4. 停止、對照及恢復
 
 ```bash
-kubectl -n demo2 delete job threadpool-load --ignore-not-found
+kubectl -n demo2 delete job threadpool-load threadpool-load-slow --ignore-not-found
 ```
 
 停止客戶端不會取消已進入 `Thread.Sleep` 的請求。等待 `BLOCK_MS`，或重新建立 app Pod（同時清掉舊 ephemeral containers）：
@@ -131,7 +151,14 @@ kubectl -n demo2 rollout restart deployment/threadpool-demo
 kubectl -n demo2 rollout status deployment/threadpool-demo --timeout=120s
 ```
 
-非阻塞對照：停止原 Job，將 `load.yaml` 的 `ENDPOINT` 從 `bad` 改成 `good` 再 apply；觀察相同併發／延遲下的 health 與 workers。重跑任一負載前先刪除舊 Job。
+若調整過 liveness 門檻，恢復原設定：
+
+```bash
+kubectl apply -f Demo_2/k8s.yaml
+kubectl -n demo2 rollout status deployment/threadpool-demo --timeout=120s
+```
+
+非阻塞對照：停止原 Job，將使用中的 `load.yaml` 或 `load-slow.yaml` 的 `ENDPOINT` 從 `bad` 改成 `good` 再 apply；觀察相同併發／延遲下的 health 與 workers。重跑任一負載前先刪除舊 Job。
 
 若沒有重啟，先確認負載確實進入 `/bad`，沒有 DNS、image pull 或 load Pod OOM 問題。基本成果是 blocked stacks、Runtime 指標或 health 延遲，不宣稱尚未重現的 restart。可逐次調高 VUs 或 `BLOCK_MS`，一次改一個因素；若 OOM 或 CPU 飽和，先停止，不能當作純 starvation 證據。只有 threads 增加但 queue／health 沒惡化，可能只是 Runtime 已補足 workers。
 

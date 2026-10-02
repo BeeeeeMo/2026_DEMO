@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: threadpool-load-slow
+  namespace: demo2
+data:
+  load.js: |
+    import http from 'k6/http';
+    import { sleep } from 'k6';
+
+    export const options = {
+      scenarios: {
+        gradual: {
+          executor: 'ramping-vus',
+          startVUs: 1,
+          stages: [
+            { duration: '30s', target: 2 },
+            { duration: '30s', target: 8 },
+            { duration: '45s', target: 32 },
+            { duration: '45s', target: 64 },
+            { duration: '45s', target: 128 },
+            { duration: '30s', target: 256 },
+            { duration: '30s', target: 256 },
+          ],
+          gracefulRampDown: '0s',
+          gracefulStop: '0s',
+        },
+      },
+    };
+
+    export default function () {
+      http.get(`http://threadpool-demo:8080/${__ENV.ENDPOINT || 'bad'}`, {
+        timeout: '90s',
+      });
+      sleep(0.1);
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: threadpool-load-slow
+  namespace: demo2
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 285
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: grafana/k6:2.3.0
+          args: ["run", "/scripts/load.js"]
+          env:
+            - name: ENDPOINT
+              value: bad
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: threadpool-load-slow
