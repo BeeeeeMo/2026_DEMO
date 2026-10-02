@@ -17,22 +17,7 @@
 
 .NET 6 對部分同步等待 Task 的 API 有較快的 worker 補充機制，因此選用 `Thread.Sleep`，不宣稱 `.Result` 一定可以穩定重啟。
 
-## 1. Images 與 CI
-
-不需要本機 .NET SDK。`.github/workflows/build-demo2-images.yml`：
-
-- PR：建置，不發布。
-- push 到 `main` 或手動執行：API smoke 通過後發布 **x64（linux/amd64）** images。
-- `ghcr.io/beeeeemo/threadpool-demo`：只有 API 與 ASP.NET Core Runtime，沒有診斷工具。
-- `ghcr.io/beeeeemo/threadpool-demo-debug`：獨立診斷 image，只有手動 debug 時使用，不列入正常 Deployment。
-- tags：`latest`、`sha-<完整 commit SHA>`；演示建議 API 與 debug image 固定到同一個 SHA tag。
-- 沿用 `GITHUB_TOKEN`，不需另加 secret。首次發布請將 GHCR packages 設為 public；private packages 須自行配置 imagePullSecret。
-
-Fork 後 workflow 會使用新 owner 的小寫名稱；請同步修改 `k8s.yaml` 及以下 debug 命令的 image 路徑。
-
-CI smoke 驗證 API image 沒有診斷工具、health、bad/good 的回覆與延遲、無效設定拒絕啟動。**Runtime 診斷與 Kubernetes 重啟是手動驗收，不是 image 發布的 smoke 條件。**
-
-## 2. 部署及正常基準
+## 1. 部署及正常基準
 
 使用隔離的 x64 K8s 叢集、kubectl，並預留 CPU／記憶體。Ephemeral containers、`--target` PID namespace targeting 須受叢集 Runtime 支援；使用支援 `--profile=general` 的 kubectl。操作身分需要更新 `pods/ephemeralcontainers` 的權限。叢集安全政策也必須允許 debug profile 的 `SYS_PTRACE` capability；不允許時不要直接放寬整個叢集政策。
 
@@ -54,7 +39,7 @@ kubectl -n demo2 logs -f health-observer
 
 Observer 的 2 秒 timeout 與 liveness 的 1 秒 timeout 不同；真正的 probe 結果以 K8s events 為準。重跑 observer 前先刪除舊的 `health-observer` Pod。
 
-## 3. 製造問題，再加入 debug container
+## 2. 製造問題，再加入 debug container
 
 另一個 terminal 啟動負載：
 
@@ -105,7 +90,7 @@ dotnet-stack report --process-id "$PID"
 
 **app 重啟後，舊 ephemeral container 可能仍停留在舊 PID namespace，不能只改 PID 就重新 attach。** 重新執行 `kubectl debug --target=app` 加入新容器，再確認程序及 socket。Ephemeral container 無法從現有 Pod 刪除；退出 shell 使其結束，最終刪除／重新建立 Pod 才清掉紀錄。
 
-## 4. 確認重啟與排除其他原因
+## 3. 確認重啟與排除其他原因
 
 在 host terminal：
 
@@ -123,7 +108,7 @@ kubectl -n demo2 get pod "$POD" -o jsonpath='{range .status.containerStatuses[*]
 
 如果重啟太快來不及診斷，可提高 `k8s.yaml` 的 liveness `failureThreshold` 後重新 apply，延長取證窗口；記錄這是演示調整，完成後恢復為 3。
 
-## 5. 停止、對照及恢復
+## 4. 停止、對照及恢復
 
 ```bash
 kubectl -n demo2 delete job threadpool-load --ignore-not-found
@@ -140,22 +125,13 @@ kubectl -n demo2 rollout status deployment/threadpool-demo --timeout=120s
 
 若沒有重啟，先確認負載確實進入 `/bad`，沒有 DNS、image pull 或 load Pod OOM 問題。基本成果是 blocked stacks、Runtime 指標或 health 延遲，不宣稱尚未重現的 restart。可逐次調高 VUs 或 `BLOCK_MS`，一次改一個因素；若 OOM 或 CPU 飽和，先停止，不能當作純 starvation 證據。只有 threads 增加但 queue／health 沒惡化，可能只是 Runtime 已補足 workers。
 
-## 6. 清理與本機 smoke
+## 5. 清理
 
 確認專用 `demo2` namespace 沒有其他資源後清理：
 
 ```bash
 kubectl delete namespace demo2
 ```
-
-若本機有 x64 Docker：
-
-```bash
-docker build --platform linux/amd64 -t demo2-app:smoke -f Demo_2/Dockerfile Demo_2
-python3 Demo_2/smoke.py
-```
-
-腳本只清理自己建立的隨機名稱容器，不碰既有資源。
 
 ## 參考
 
