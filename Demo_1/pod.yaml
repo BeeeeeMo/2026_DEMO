@@ -6,3 +6,6 @@ spec:
   containers:
     - name: app
       image: your-registry/zombie-demo:latest # Replace with your pushed image.
+      env:
+        - name: ZOMBIE_LIMIT
+          value: "30"
