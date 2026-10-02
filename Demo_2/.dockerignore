@@ -1,0 +1,5 @@
+**/bin
+**/obj
+.git
+README.md
+*.yaml

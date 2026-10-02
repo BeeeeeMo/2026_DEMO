@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threadpool-demo
+  namespace: demo2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threadpool-demo
+  template:
+    metadata:
+      labels:
+        app: threadpool-demo
+    spec:
+      # PID discovery and the runtime diagnostic socket must both be accessible.
+      shareProcessNamespace: true
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: app
+          image: ghcr.io/beeeeemo/threadpool-demo:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: BLOCK_MS
+              value: "60000"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 3
+          # No readiness probe: removing the overloaded Pod from the Service would
+          # interrupt the experiment's load and hide the starvation mechanism.
+          volumeMounts:
+            - name: diagnostics
+              mountPath: /tmp
+        - name: debug
+          image: ghcr.io/beeeeemo/threadpool-demo-debug:latest
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: diagnostics
+              mountPath: /tmp
+      volumes:
+        - name: diagnostics
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threadpool-demo
+  namespace: demo2
+spec:
+  selector:
+    app: threadpool-demo
+  ports:
+    - port: 8080
+      targetPort: http
