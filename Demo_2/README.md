@@ -4,8 +4,6 @@
 
 這是人為重現的一種機制，**不是當年線上事件已證實的 RCA**。Thread count 到 100 或 200 不代表 ThreadPool 已達預設上限。Liveness 重啟的是 app 容器，不是重新建立 Pod。
 
-.NET 6 與此處的診斷工具已停止支援，只限隔離的教學環境，不公開到 Internet。
-
 ## 組成
 
 - `/healthz`：立即回覆 `OK`，沒有外部依賴。
