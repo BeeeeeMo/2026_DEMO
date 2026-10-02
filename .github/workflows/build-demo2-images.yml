@@ -4,11 +4,19 @@ on:
   push:
     branches: [main]
     paths:
-      - "Demo_2/**"
+      - "Demo_2/Program.cs"
+      - "Demo_2/*.csproj"
+      - "Demo_2/Dockerfile"
+      - "Demo_2/.dockerignore"
+      - "Demo_2/smoke.py"
       - ".github/workflows/build-demo2-images.yml"
   pull_request:
     paths:
-      - "Demo_2/**"
+      - "Demo_2/Program.cs"
+      - "Demo_2/*.csproj"
+      - "Demo_2/Dockerfile"
+      - "Demo_2/.dockerignore"
+      - "Demo_2/smoke.py"
       - ".github/workflows/build-demo2-images.yml"
   workflow_dispatch:
 
