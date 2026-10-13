@@ -18,26 +18,39 @@ fn main() -> io::Result<()> {
         .unwrap_or(Ok(DEFAULT_ZOMBIE_LIMIT))?;
 
     println!("Parent PID: {}", std::process::id());
-    println!("Creating one zombie per second (up to {zombie_limit})...");
+    println!("Orphaning one grandchild per second (up to {zombie_limit})...");
 
     for _ in 0..zombie_limit {
-        // SAFETY: The child does nothing except call _exit immediately after fork.
-        // No Rust runtime code, allocation, or buffered I/O runs in the child.
+        // SAFETY: The process is single-threaded, and both children only call
+        // async-signal-safe libc functions before _exit.
         let pid = unsafe { libc::fork() };
         if pid < 0 {
             return Err(io::Error::last_os_error());
         }
         if pid == 0 {
-            // SAFETY: _exit terminates the child without running Rust destructors.
-            unsafe { libc::_exit(0) };
+            // Intermediate child: fork a grandchild, then exit immediately so the
+            // grandchild is orphaned and reparented to PID 1.
+            unsafe {
+                let grandchild = libc::fork();
+                if grandchild == 0 {
+                    libc::sleep(1);
+                    libc::_exit(0);
+                }
+                libc::_exit(if grandchild < 0 { 1 } else { 0 });
+            }
         }
 
-        println!("Spawned child PID: {pid}");
-        // Intentionally do not waitpid(pid, ...): the exited child remains a zombie.
+        // The app reaps its own direct child correctly. The orphaned grandchild
+        // is no longer ours: only PID 1 can reap it after it exits.
+        let mut status = 0;
+        if unsafe { libc::waitpid(pid, &mut status, 0) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        println!("Reaped intermediate PID {pid}; its grandchild is now an orphan");
         thread::sleep(Duration::from_secs(1));
     }
 
-    println!("Reached limit; parent stays alive so the zombies remain visible.");
+    println!("Reached limit; parent stays alive so any zombies remain visible.");
     loop {
         thread::park();
     }
